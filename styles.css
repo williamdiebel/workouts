@@ -305,6 +305,82 @@ button.ghost {
   margin-bottom: 0.35rem;
 }
 
+.cloud-panel {
+  border-top: 1px dashed var(--line);
+  padding-top: 0.8rem;
+}
+
+.cloud-helper {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.55rem;
+}
+
+.cloud-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: #ece3cb;
+  color: #62553a;
+}
+
+.cloud-badge.connected {
+  background: #d9efe5;
+  color: #1e5c3f;
+}
+
+.cloud-field {
+  margin-bottom: 0.45rem;
+}
+
+.cloud-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.25rem 0 0.55rem;
+}
+
+.cloud-check input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+}
+
+.cloud-check span {
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.cloud-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.cloud-actions button {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.cloud-status {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.cloud-status.error {
+  color: var(--danger);
+}
+
+.cloud-status.success {
+  color: #1e5c3f;
+}
+
 .content-head {
   display: flex;
   justify-content: space-between;
@@ -583,12 +659,17 @@ button.ghost {
 
   .set-entry button,
   .session-actions button,
+  .cloud-actions button,
   .segmented button,
   .workout-btn,
   .history-btn,
-  input,
+  input:not([type="checkbox"]),
   textarea {
     min-height: 2.75rem;
+  }
+
+  .cloud-check input {
+    min-height: 1rem;
   }
 
   .session-actions {
@@ -603,6 +684,10 @@ button.ghost {
   .workout-btn,
   .history-btn {
     padding: 0.68rem 0.66rem;
+  }
+
+  .cloud-actions {
+    grid-template-columns: 1fr;
   }
 
   .notes textarea {

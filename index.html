@@ -78,6 +78,33 @@
           </div>
           <div id="history-list" class="history-list"></div>
         </section>
+
+        <section class="cloud-panel">
+          <div class="history-head">
+            <p class="eyebrow">Cloud Sync</p>
+            <span id="cloud-badge" class="cloud-badge">Not connected</span>
+          </div>
+          <p class="cloud-helper">Sync workouts across phone and laptop using a private GitHub Gist.</p>
+          <label class="field cloud-field" for="cloud-token">
+            <span>GitHub Token</span>
+            <input id="cloud-token" type="password" autocomplete="off" placeholder="Paste token with gist access" />
+          </label>
+          <label class="field cloud-field" for="cloud-gist">
+            <span>Gist ID (optional on first connect)</span>
+            <input id="cloud-gist" type="text" autocomplete="off" placeholder="Leave blank to create automatically" />
+          </label>
+          <label class="cloud-check">
+            <input id="cloud-auto" type="checkbox" />
+            <span>Auto-sync after changes</span>
+          </label>
+          <div class="cloud-actions">
+            <button type="button" id="cloud-connect" class="secondary">Connect</button>
+            <button type="button" id="cloud-push" class="secondary">Push</button>
+            <button type="button" id="cloud-pull" class="secondary">Pull</button>
+          </div>
+          <button type="button" id="cloud-disconnect" class="ghost">Disconnect</button>
+          <p id="cloud-status" class="cloud-status">Cloud sync is off.</p>
+        </section>
       </aside>
 
       <section class="content card">

@@ -37,6 +37,37 @@ Note:
 2. Tap `Share` -> `Add to Home Screen`.
 3. Launch from the icon like a normal app.
 
+## Cloud Sync (Phone + Laptop)
+
+Cloud sync is built in using a private GitHub Gist.
+
+### Step 1: Create a token
+
+1. GitHub -> `Settings` -> `Developer settings` -> `Personal access tokens`.
+2. Create a token with `gist` access.
+3. Copy the token (you will paste it into the app).
+
+### Step 2: Connect your first device
+
+1. Open the app.
+2. In `Cloud Sync`, paste your token.
+3. Leave `Gist ID` blank.
+4. Tap `Connect`.
+   - The app creates a private gist automatically.
+   - The generated `Gist ID` appears in the field.
+5. Tap `Push` once.
+
+### Step 3: Connect your second device
+
+1. Open the app on the second device.
+2. Paste the same token.
+3. Paste the same `Gist ID`.
+4. Tap `Connect`, then `Pull`.
+
+Optional:
+- Enable `Auto-sync after changes` on each device.
+- You can still use `Push`/`Pull` manually anytime.
+
 ## Local Run
 
 ```bash
@@ -64,7 +95,9 @@ Open `http://YOUR_IP:8000` on your phone (same Wi-Fi).
 - Data is stored locally in browser storage on each device.
 - No user accounts.
 - No analytics/tracking by default.
-- Phone and laptop data are separate unless sync is added later.
+- Cloud sync is optional.
+- If cloud sync is enabled, the app stores workout data in your private GitHub Gist.
+- Token is stored locally on each device to allow sync calls.
 
 ## Tech Stack
 

@@ -1,5 +1,7 @@
 const STORAGE_KEY = "runner-strength-log.v1";
 const DEFAULT_TIMER_SECONDS = 90;
+const CLOUD_FILE_NAME = "runner-strength-log.json";
+const CLOUD_SYNC_DEBOUNCE_MS = 1600;
 
 const WORKOUTS = [
   {
@@ -218,6 +220,15 @@ const state = {
   sessions: [],
   activeSessionId: null,
   drafts: {},
+  cloud: {
+    token: "",
+    gistId: "",
+    autoSync: false,
+    syncInFlight: false,
+    lastSyncAt: null,
+    statusText: "Cloud sync is off.",
+    statusKind: "neutral",
+  },
   timer: {
     duration: DEFAULT_TIMER_SECONDS,
     remaining: DEFAULT_TIMER_SECONDS,
@@ -227,6 +238,7 @@ const state = {
   },
   timerInterval: null,
   statusTimeout: null,
+  cloudSyncTimeout: null,
 };
 
 const els = {
@@ -244,6 +256,15 @@ const els = {
   finishSession: document.getElementById("finish-session"),
   newSession: document.getElementById("new-session"),
   clearHistory: document.getElementById("clear-history"),
+  cloudToken: document.getElementById("cloud-token"),
+  cloudGist: document.getElementById("cloud-gist"),
+  cloudAuto: document.getElementById("cloud-auto"),
+  cloudConnect: document.getElementById("cloud-connect"),
+  cloudPush: document.getElementById("cloud-push"),
+  cloudPull: document.getElementById("cloud-pull"),
+  cloudDisconnect: document.getElementById("cloud-disconnect"),
+  cloudBadge: document.getElementById("cloud-badge"),
+  cloudStatus: document.getElementById("cloud-status"),
   timerDisplay: document.getElementById("timer-display"),
   timerLabel: document.getElementById("timer-label"),
   timerPresets: document.getElementById("timer-presets"),
@@ -364,6 +385,39 @@ function attachEvents() {
     renderAll();
   });
 
+  els.cloudConnect.addEventListener("click", async () => {
+    await connectCloudSync();
+  });
+
+  els.cloudPush.addEventListener("click", async () => {
+    await pushCloudData();
+  });
+
+  els.cloudPull.addEventListener("click", async () => {
+    await pullCloudData();
+  });
+
+  els.cloudDisconnect.addEventListener("click", () => {
+    if (!window.confirm("Disconnect cloud sync on this device? Local workout data will stay here.")) {
+      return;
+    }
+    disconnectCloudSync();
+  });
+
+  els.cloudAuto.addEventListener("change", () => {
+    state.cloud.autoSync = Boolean(els.cloudAuto.checked);
+    if (state.cloud.autoSync && isCloudConfigured()) {
+      setCloudStatus("Auto-sync enabled.", "success");
+      scheduleAutoCloudSync();
+    } else if (state.cloud.autoSync) {
+      setCloudStatus("Auto-sync will start after you connect cloud sync.", "neutral");
+    } else {
+      setCloudStatus("Auto-sync disabled.", "neutral");
+    }
+    persist({ skipCloudAutoSync: true });
+    renderCloudSection();
+  });
+
   els.historyList.addEventListener("click", (event) => {
     const btn = event.target.closest("button[data-session-id]");
     if (!btn) {
@@ -424,18 +478,39 @@ function hydrateFromStorage() {
     if (parsed && Array.isArray(parsed.sessions)) {
       state.sessions = parsed.sessions;
     }
+    if (parsed && parsed.cloud && typeof parsed.cloud === "object") {
+      state.cloud.token = typeof parsed.cloud.token === "string" ? parsed.cloud.token : "";
+      state.cloud.gistId = typeof parsed.cloud.gistId === "string" ? parsed.cloud.gistId : "";
+      state.cloud.autoSync = Boolean(parsed.cloud.autoSync);
+      state.cloud.lastSyncAt = typeof parsed.cloud.lastSyncAt === "string" ? parsed.cloud.lastSyncAt : null;
+      if (isCloudConfigured()) {
+        state.cloud.statusText = state.cloud.lastSyncAt
+          ? `Connected. Last sync ${formatDateTime(state.cloud.lastSyncAt)}.`
+          : "Connected. Ready to sync.";
+      }
+    }
   } catch (error) {
     console.error("Storage parse failed:", error);
   }
 }
 
-function persist() {
+function persist(options = {}) {
+  const { skipCloudAutoSync = false } = options;
   const payload = {
     location: state.location,
     selectedWorkoutId: state.selectedWorkoutId,
     sessions: state.sessions,
+    cloud: {
+      token: state.cloud.token,
+      gistId: state.cloud.gistId,
+      autoSync: state.cloud.autoSync,
+      lastSyncAt: state.cloud.lastSyncAt,
+    },
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  if (!skipCloudAutoSync) {
+    scheduleAutoCloudSync();
+  }
 }
 
 function ensureActiveSession(options = {}) {
@@ -511,6 +586,7 @@ function renderAll() {
   renderExercises(session);
   renderProgress(session);
   renderHistory();
+  renderCloudSection();
   renderNotes(session);
   renderTimer();
 }
@@ -674,6 +750,361 @@ function renderHistory() {
       `;
     })
     .join("");
+}
+
+function renderCloudSection() {
+  const connected = isCloudConfigured();
+  const busy = state.cloud.syncInFlight;
+
+  if (document.activeElement !== els.cloudToken) {
+    els.cloudToken.value = state.cloud.token || "";
+  }
+  if (document.activeElement !== els.cloudGist) {
+    els.cloudGist.value = state.cloud.gistId || "";
+  }
+  els.cloudAuto.checked = Boolean(state.cloud.autoSync);
+
+  els.cloudBadge.textContent = connected ? "Connected" : "Not connected";
+  els.cloudBadge.classList.toggle("connected", connected);
+  els.cloudConnect.textContent = connected ? "Save" : "Connect";
+
+  els.cloudConnect.disabled = busy;
+  els.cloudPush.disabled = busy || !connected;
+  els.cloudPull.disabled = busy || !connected;
+  els.cloudDisconnect.disabled = busy || (!state.cloud.token && !state.cloud.gistId);
+  els.cloudToken.disabled = busy;
+  els.cloudGist.disabled = busy;
+  els.cloudAuto.disabled = busy;
+
+  els.cloudStatus.textContent = state.cloud.statusText || "Cloud sync is off.";
+  els.cloudStatus.classList.remove("error", "success");
+  if (state.cloud.statusKind === "error") {
+    els.cloudStatus.classList.add("error");
+  } else if (state.cloud.statusKind === "success") {
+    els.cloudStatus.classList.add("success");
+  }
+}
+
+async function connectCloudSync() {
+  const token = (els.cloudToken.value || "").trim();
+  const gistInput = normalizeGistId(els.cloudGist.value || "");
+
+  if (!token) {
+    setCloudStatus("Enter a GitHub token with gist access.", "error");
+    renderCloudSection();
+    return;
+  }
+
+  setCloudBusy(true, "Connecting to GitHub...");
+  try {
+    let gistId = gistInput;
+    if (!gistId) {
+      gistId = await createCloudGist(token, buildCloudPayload());
+    } else {
+      await getCloudGist(token, gistId);
+    }
+
+    state.cloud.token = token;
+    state.cloud.gistId = gistId;
+    state.cloud.autoSync = Boolean(els.cloudAuto.checked);
+    state.cloud.lastSyncAt = state.cloud.lastSyncAt || null;
+    setCloudStatus(`Connected to gist ${shortId(gistId)}.`, "success");
+    persist({ skipCloudAutoSync: true });
+  } catch (error) {
+    console.error(error);
+    setCloudStatus(`Connect failed: ${error.message}`, "error");
+  } finally {
+    state.cloud.syncInFlight = false;
+    renderCloudSection();
+  }
+}
+
+function disconnectCloudSync() {
+  if (state.cloudSyncTimeout) {
+    window.clearTimeout(state.cloudSyncTimeout);
+    state.cloudSyncTimeout = null;
+  }
+
+  state.cloud.token = "";
+  state.cloud.gistId = "";
+  state.cloud.autoSync = false;
+  state.cloud.lastSyncAt = null;
+  state.cloud.syncInFlight = false;
+  setCloudStatus("Cloud sync is off.", "neutral");
+  persist({ skipCloudAutoSync: true });
+  renderCloudSection();
+}
+
+async function pushCloudData(options = {}) {
+  const { silent = false } = options;
+  if (!isCloudConfigured()) {
+    if (!silent) {
+      setCloudStatus("Connect cloud sync first.", "error");
+      renderCloudSection();
+    }
+    return;
+  }
+  if (state.cloud.syncInFlight) {
+    return;
+  }
+  if (state.cloudSyncTimeout) {
+    window.clearTimeout(state.cloudSyncTimeout);
+    state.cloudSyncTimeout = null;
+  }
+
+  setCloudBusy(true, silent ? "Auto-syncing..." : "Uploading data...");
+  try {
+    await saveCloudPayload(state.cloud.token, state.cloud.gistId, buildCloudPayload());
+    state.cloud.lastSyncAt = new Date().toISOString();
+    setCloudStatus(`Synced at ${formatDateTime(state.cloud.lastSyncAt)}.`, "success");
+    persist({ skipCloudAutoSync: true });
+  } catch (error) {
+    console.error(error);
+    setCloudStatus(`Push failed: ${error.message}`, "error");
+  } finally {
+    state.cloud.syncInFlight = false;
+    renderCloudSection();
+  }
+}
+
+async function pullCloudData() {
+  if (!isCloudConfigured()) {
+    setCloudStatus("Connect cloud sync first.", "error");
+    renderCloudSection();
+    return;
+  }
+  if (state.cloud.syncInFlight) {
+    return;
+  }
+  if (state.cloudSyncTimeout) {
+    window.clearTimeout(state.cloudSyncTimeout);
+    state.cloudSyncTimeout = null;
+  }
+
+  setCloudBusy(true, "Downloading data...");
+  try {
+    const gist = await getCloudGist(state.cloud.token, state.cloud.gistId);
+    const payload = await parseCloudPayloadFromGist(gist, state.cloud.token);
+
+    if (!payload || !Array.isArray(payload.sessions)) {
+      throw new Error("Cloud data format is invalid.");
+    }
+
+    if (state.sessions.length > 0) {
+      const shouldReplace = window.confirm(
+        "Pulling cloud data will replace this device's local workout history. Continue?",
+      );
+      if (!shouldReplace) {
+        setCloudStatus("Pull cancelled.", "neutral");
+        state.cloud.syncInFlight = false;
+        renderCloudSection();
+        return;
+      }
+    }
+
+    applyCloudPayload(payload);
+    state.cloud.lastSyncAt = new Date().toISOString();
+    setCloudStatus(`Pulled at ${formatDateTime(state.cloud.lastSyncAt)}.`, "success");
+    persist({ skipCloudAutoSync: true });
+    renderAll();
+  } catch (error) {
+    console.error(error);
+    setCloudStatus(`Pull failed: ${error.message}`, "error");
+  } finally {
+    state.cloud.syncInFlight = false;
+    renderCloudSection();
+  }
+}
+
+function scheduleAutoCloudSync() {
+  if (!state.cloud.autoSync || !isCloudConfigured() || state.cloud.syncInFlight) {
+    return;
+  }
+  if (state.cloudSyncTimeout) {
+    window.clearTimeout(state.cloudSyncTimeout);
+  }
+  state.cloudSyncTimeout = window.setTimeout(() => {
+    state.cloudSyncTimeout = null;
+    pushCloudData({ silent: true });
+  }, CLOUD_SYNC_DEBOUNCE_MS);
+}
+
+function isCloudConfigured() {
+  return Boolean(state.cloud.token && state.cloud.gistId);
+}
+
+function setCloudBusy(isBusy, message) {
+  state.cloud.syncInFlight = isBusy;
+  if (message) {
+    setCloudStatus(message, "neutral");
+  }
+  renderCloudSection();
+}
+
+function setCloudStatus(message, kind = "neutral") {
+  state.cloud.statusText = message;
+  state.cloud.statusKind = kind;
+}
+
+function buildCloudPayload() {
+  return {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    location: state.location,
+    selectedWorkoutId: state.selectedWorkoutId,
+    dateISO: getSelectedDate(),
+    sessions: state.sessions,
+  };
+}
+
+function applyCloudPayload(payload) {
+  state.sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+  state.location = ["gym", "home"].includes(payload.location) ? payload.location : "gym";
+  state.selectedWorkoutId = getWorkout(payload.selectedWorkoutId)
+    ? payload.selectedWorkoutId
+    : WORKOUTS[0].id;
+  state.activeSessionId = null;
+  state.drafts = {};
+
+  const dateCandidate = typeof payload.dateISO === "string" ? payload.dateISO : getLatestSessionDate(state.sessions);
+  els.sessionDate.value = dateCandidate || todayISO();
+  ensureActiveSession();
+}
+
+function getLatestSessionDate(sessions) {
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    return null;
+  }
+  const dates = sessions
+    .map((session) => session.dateISO)
+    .filter((value) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))
+    .sort();
+  return dates.length ? dates[dates.length - 1] : null;
+}
+
+function normalizeGistId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(raw);
+    const chunks = parsed.pathname.split("/").filter(Boolean);
+    return chunks.length ? chunks[chunks.length - 1] : raw;
+  } catch (_error) {
+    return raw;
+  }
+}
+
+async function createCloudGist(token, payload) {
+  const body = {
+    description: "Runner Strength Log cloud sync data",
+    public: false,
+    files: {
+      [CLOUD_FILE_NAME]: {
+        content: JSON.stringify(payload, null, 2),
+      },
+    },
+  };
+  const gist = await githubRequest("https://api.github.com/gists", token, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!gist || !gist.id) {
+    throw new Error("Could not create gist.");
+  }
+  return gist.id;
+}
+
+async function saveCloudPayload(token, gistId, payload) {
+  const body = {
+    files: {
+      [CLOUD_FILE_NAME]: {
+        content: JSON.stringify(payload, null, 2),
+      },
+    },
+  };
+  await githubRequest(`https://api.github.com/gists/${encodeURIComponent(gistId)}`, token, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+async function getCloudGist(token, gistId) {
+  return githubRequest(`https://api.github.com/gists/${encodeURIComponent(gistId)}`, token);
+}
+
+async function parseCloudPayloadFromGist(gist, token) {
+  if (!gist || !gist.files || typeof gist.files !== "object") {
+    throw new Error("Gist response was missing files.");
+  }
+
+  const preferred = gist.files[CLOUD_FILE_NAME];
+  const fallback = preferred || Object.values(gist.files)[0];
+  if (!fallback) {
+    throw new Error("No file found in gist.");
+  }
+
+  let content = fallback.content;
+  if (!content && fallback.raw_url) {
+    const response = await fetch(fallback.raw_url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to read gist file (${response.status}).`);
+    }
+    content = await response.text();
+  }
+
+  if (!content) {
+    throw new Error("Gist file had no readable content.");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (_error) {
+    throw new Error("Gist file is not valid JSON.");
+  }
+
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.sessions)) {
+    throw new Error("Gist JSON did not contain workout sessions.");
+  }
+
+  return parsed;
+}
+
+async function githubRequest(url, token, options = {}) {
+  const response = await fetch(url, {
+    method: options.method || "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body: options.body,
+  });
+
+  const text = await response.text();
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch (_error) {
+      payload = null;
+    }
+  }
+
+  if (!response.ok) {
+    const errorMessage = payload && payload.message ? payload.message : `${response.status} ${response.statusText}`;
+    throw new Error(errorMessage);
+  }
+
+  return payload;
 }
 
 function renderNotes(session) {
@@ -972,6 +1403,19 @@ function formatDate(isoDate) {
   });
 }
 
+function formatDateTime(isoDateTime) {
+  const parsed = new Date(isoDateTime);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoDateTime;
+  }
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function parseNumber(value) {
   const cleaned = String(value || "").trim();
   if (!cleaned) {
@@ -1009,6 +1453,13 @@ function titleCase(value) {
     return "";
   }
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function shortId(value) {
+  if (!value || value.length < 10) {
+    return value;
+  }
+  return `${value.slice(0, 5)}...${value.slice(-4)}`;
 }
 
 function registerServiceWorker() {
