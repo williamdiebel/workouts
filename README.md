@@ -1,82 +1,78 @@
-# workouts
+# Runner Strength Log
 
-Local-first strength workout app for gym/home sessions that support distance running progression.
+A lightweight workout app inspired by StrongLifts-style logging, tailored for strength work that supports distance running.
 
-## What it includes
+This project is intentionally simple: no backend, no account creation, fast to open, and optimized for phone use during real sessions.
 
-- Your full 2-week program
-- Gym/Home toggle for each workout day
+## Features
+
+- Structured 2-week program templates
+- Gym/Home workout variants
 - Set-by-set logging (`weight`, `reps/seconds`, optional `RPE`)
-- Integrated rest timer (auto-starts after logging a set)
-- Progress tracking and session notes
-- Installable web app behavior on iPhone (Home Screen icon)
+- Built-in rest timer that auto-starts after each logged set
+- Session notes and completion status
+- Progress tracking by total planned vs completed sets
+- Installable iPhone web app (Home Screen icon)
 - Offline support after first load
 
-## Best everyday setup (iPhone app icon)
+## iPhone Setup (Recommended)
 
-This is the lowest-friction routine setup.
+### 1) Publish with GitHub Pages
 
-Note on private repos:
-- GitHub Pages supports private repositories on GitHub Pro/Team/Enterprise plans.
-- If you're on GitHub Free, your Pages source repo needs to be public (or host elsewhere).
-
-1. Push this repo to GitHub.
-2. In GitHub, open `Settings` -> `Pages`.
+1. Open this repo on GitHub.
+2. Go to `Settings` -> `Pages`.
 3. Under `Build and deployment`, choose:
    - `Source`: `Deploy from a branch`
    - `Branch`: `main`
    - `Folder`: `/ (root)`
-4. Save and wait for GitHub to publish your site URL.
-5. On iPhone, open the site URL in Safari.
-6. Tap `Share` -> `Add to Home Screen`.
+4. Save and wait for your site URL to appear.
 
-After this, use the Home Screen icon like a normal app.
+Note:
+- GitHub Free: Pages generally requires a public repo.
+- GitHub Pro/Team/Enterprise: private repo Pages is supported.
 
-## Local testing on your phone (before publishing)
+### 2) Install on iPhone
 
-1. Start local server:
+1. Open the Pages URL in Safari.
+2. Tap `Share` -> `Add to Home Screen`.
+3. Launch from the icon like a normal app.
 
-```bash
-python3 -m http.server 8000 --bind 0.0.0.0
-```
-
-2. In another terminal, get your Mac IP:
-
-```bash
-ipconfig getifaddr en0
-```
-
-3. On iPhone (same Wi-Fi), open:
-
-```text
-http://YOUR_IP:8000
-```
-
-## Local desktop run
+## Local Run
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`.
+Open `http://localhost:8000`.
 
-## Basic use flow
+## Phone Testing on Local Network
 
-1. Pick `Gym` or `Home`.
-2. Pick workout card (Week/Day).
-3. Enter set values and tap `Log Set`.
-4. Follow rest timer.
-5. Tap `Finish Session` when done.
+```bash
+python3 -m http.server 8000 --bind 0.0.0.0
+```
 
-## Data behavior
+Then find your local IP:
 
-- Data is stored in browser storage for that device.
-- If you use phone + laptop, each device keeps its own history.
-- `Clear` removes all saved sessions on that device.
+```bash
+ipconfig getifaddr en0
+```
 
-## Updating the app later
+Open `http://YOUR_IP:8000` on your phone (same Wi-Fi).
 
-1. Change code.
-2. Commit and push to `main`.
-3. GitHub Pages redeploys.
-4. On iPhone, reopen the app and refresh once if needed.
+## Privacy and Data
+
+- Data is stored locally in browser storage on each device.
+- No user accounts.
+- No analytics/tracking by default.
+- Phone and laptop data are separate unless sync is added later.
+
+## Tech Stack
+
+- HTML/CSS/JavaScript (vanilla)
+- PWA manifest + service worker for install/offline behavior
+
+## Planned Improvements
+
+- Optional cloud sync across devices
+- Export/import of workout history
+- Deeper progression analytics tied to run training phases
