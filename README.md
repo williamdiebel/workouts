@@ -16,6 +16,10 @@ Local-first strength workout app for gym/home sessions that support distance run
 
 This is the lowest-friction routine setup.
 
+Note on private repos:
+- GitHub Pages supports private repositories on GitHub Pro/Team/Enterprise plans.
+- If you're on GitHub Free, your Pages source repo needs to be public (or host elsewhere).
+
 1. Push this repo to GitHub.
 2. In GitHub, open `Settings` -> `Pages`.
 3. Under `Build and deployment`, choose:
